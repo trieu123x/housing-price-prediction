@@ -1,6 +1,6 @@
 # Website Dự đoán Giá nhà Việt Nam (Vietnam Housing AI)
 
-> **Môn học:** Intelligent System Development — TS. Đinh Quế Trần  
+> **Môn học:** Intelligent System Development — TS. Trần Đình Quế  
 > **Phần 2:** Regression — Dự đoán Giá nhà Việt Nam 2024  
 
 ---
