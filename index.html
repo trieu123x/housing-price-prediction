@@ -408,6 +408,7 @@
     .cmp-name span { display: block; font-size: .66rem; color: #64748b; font-weight: 400; }
     .cmp-track { flex: 1; height: 9px; border-radius: 6px; background: rgba(255,255,255,.07); overflow: hidden; }
     .cmp-fill { height: 100%; border-radius: 6px; width: 0; transition: width .55s cubic-bezier(.4,0,.2,1); }
+    .cmp-fill.cnn  { background: linear-gradient(90deg, #6366f1, #a855f7); }
     .cmp-fill.deep { background: linear-gradient(90deg, #10b981, #34d399); }
     .cmp-fill.gb   { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
     .cmp-pct { flex: 0 0 72px; text-align: right; font-size: .82rem; font-weight: 700; color: #e2e8f0; font-variant-numeric: tabular-nums; }
@@ -529,21 +530,25 @@
             <button class="preset-btn" onclick="applyPreset('binh-duong')">🏘️ BD - Nhà trọ</button>
           </div>
 
-          <!-- Engine switch (Assignment 03) -->
+          <!-- Engine switch (Assignment 04) -->
           <div class="engine-switch" id="engineSwitch">
-            <button class="engine-btn active" data-engine="deep" onclick="setEngine('deep')">
-              🧠 Deep MLP-5<small>NumPy from scratch</small>
+            <button class="engine-btn active" data-engine="cnn" onclick="setEngine('cnn')">
+              🧩 CNN-5 1D<small>Assignment 04</small>
+            </button>
+            <button class="engine-btn" data-engine="deep" onclick="setEngine('deep')">
+              🧠 Deep MLP-5<small>Assignment 03</small>
             </button>
             <button class="engine-btn" data-engine="gb" onclick="setEngine('gb')">
               🌳 Gradient Boosting<small>Classical ML</small>
             </button>
             <button class="engine-btn" data-engine="both" onclick="setEngine('both')">
-              ⚖️ Đối sánh<small>Chạy cả hai</small>
+              ⚖️ Đối sánh<small>Chạy cả ba</small>
             </button>
           </div>
           <p class="engine-hint" id="engineHint">
-            Mạng nơ-ron sâu 5 tầng (19 → 128 → 64 → 32 → 16 → 1) học trên thang log1p(giá) với one-hot
-            tỉnh/loại hình — trọng số nhúng thẳng vào trang.
+            Mạng tích chập 1D 5 tầng với head tuyến tính (hồi quy), học trên thang log1p(giá).
+            Trọng số tải từ <code>model_cnn.json</code> trên GitHub — suy luận chạy hoàn toàn
+            bằng JavaScript trên máy bạn.
           </p>
 
           <button class="predict-btn" id="predictBtn" onclick="runPrediction()">
@@ -580,7 +585,7 @@
       <!-- Architecture (Assignment 03) -->
       <div class="compare-card">
         <div class="arch-section" style="margin-top:0">
-          <div class="arch-title">Kiến trúc mạng nơ-ron sâu 5 tầng</div>
+          <div class="arch-title">Kiến trúc mạng tích chập 1D (Assignment 04)</div>
           <div class="arch-flow" id="archFlow"></div>
           <p class="engine-hint" id="archNote">–</p>
         </div>
@@ -588,7 +593,7 @@
 
       <!-- Comparison table — điền động từ trọng số đã nhúng -->
       <div class="compare-card">
-        <div class="compare-title">Đối sánh Classical ML vs Deep Learning (tập Test)</div>
+        <div class="compare-title">Đối sánh CNN vs MLP vs Classical ML (tập Test)</div>
         <table>
           <thead>
             <tr>
@@ -630,9 +635,14 @@
             <span class="pr-end high" id="prHigh">–</span>
           </div>
         </div>
-        <!-- Đối sánh Deep Learning vs Classical ML (Assignment 03) -->
+        <!-- Đối sánh CNN vs MLP vs Classical ML (Assignment 04) -->
         <div class="compare-section" id="compareSection" style="display:none">
           <div class="compare-title">Đối sánh mô hình — giá ước tính</div>
+          <div class="cmp-row">
+            <div class="cmp-name">🧩 CNN-5 1D<span>NumPy from scratch</span></div>
+            <div class="cmp-track"><div class="cmp-fill cnn" id="cmpCnnFill"></div></div>
+            <div class="cmp-pct" id="cmpCnnPct">–</div>
+          </div>
           <div class="cmp-row">
             <div class="cmp-name">🧠 Deep MLP-5<span>NumPy from scratch</span></div>
             <div class="cmp-track"><div class="cmp-fill deep" id="cmpDeepFill"></div></div>
@@ -677,7 +687,7 @@
 </main>
 
 <footer>
-  <p>Assignment 01 — Intelligent System Development · TS. Trần Đình Quế · PTIT 2026</p>
+  <p>Assignment 04 — Intelligent System Development · TS. Trần Đình Quế · PTIT 2026</p>
   <p style="margin-top:6px">Dataset: <a href="https://www.kaggle.com/datasets/nguyentiennhan/vietnam-housing-dataset-2024" target="_blank">Vietnam Housing 2024</a> · Model chạy 100% trên trình duyệt</p>
 </footer>
 
@@ -771,17 +781,125 @@ function predictDeep(province, houseType, area, bedrooms, bathrooms, floors) {
   return Math.max(0.1, Math.expm1(z * tt.std + tt.mean));
 }
 
+// ============================================================
+// CNN ENGINE (Assignment 04) — mạng tích chập 1D, forward thuần JS
+// ------------------------------------------------------------
+// Bản dịch nguyên văn của forward_reference() trong lib/cnn_numpy.py.
+// Trọng số nằm ở model_cnn.json (commit lên GitHub cùng repo này); Vercel phục
+// vụ nó như tệp tĩnh, trang fetch về rồi tính ngay trên trình duyệt.
+//
+// Chuỗi đầu vào dài 19 gồm ba khối: 4 cột số (đã z-score) ++ one-hot Province
+// ++ one-hot HouseType. Đầu ra là thang z, phải quy đổi expm1(z*std+mean).
+//
+// Quy ước tensor giống bản Python (channels-first):
+//   giai đoạn chuỗi  : { c, l, v } với v[ch * l + pos]
+//   giai đoạn vector : { d, v }    với v[i]
+// ============================================================
+
+let CNN_MODEL = null;
+
+function cnnConv1d(a, layer) {
+  const W = layer.W, b = layer.b;
+  const cOut = layer.c_out, cIn = layer.c_in, k = layer.k;
+  const L = a.l, Lo = L - k + 1;
+  const out = new Float64Array(cOut * Lo);
+  for (let o = 0; o < cOut; o++) {
+    const Wo = W[o], base = o * Lo;
+    for (let p = 0; p < Lo; p++) {
+      let s = b[o];
+      for (let c = 0; c < cIn; c++) {
+        const Woc = Wo[c], off = c * L + p;
+        for (let j = 0; j < k; j++) s += Woc[j] * a.v[off + j];
+      }
+      out[base + p] = s;
+    }
+  }
+  return { c: cOut, l: Lo, v: out };
+}
+
+function cnnRelu(a) {
+  const v = new Float64Array(a.v.length);
+  for (let i = 0; i < v.length; i++) v[i] = a.v[i] > 0 ? a.v[i] : 0;
+  return { ...a, v };
+}
+
+function cnnMaxPool1d(a, p) {
+  const Lo = Math.floor(a.l / p);
+  const out = new Float64Array(a.c * Lo);
+  for (let c = 0; c < a.c; c++) {
+    for (let i = 0; i < Lo; i++) {
+      let mx = -Infinity;
+      const off = c * a.l + i * p;
+      for (let j = 0; j < p; j++) if (a.v[off + j] > mx) mx = a.v[off + j];
+      out[c * Lo + i] = mx;
+    }
+  }
+  return { c: a.c, l: Lo, v: out };
+}
+
+function cnnDense(a, layer) {
+  const W = layer.W, b = layer.b, dOut = b.length;
+  const out = new Float64Array(dOut);
+  for (let j = 0; j < dOut; j++) out[j] = b[j];
+  for (let i = 0; i < a.d; i++) {
+    const ai = a.v[i];
+    if (ai === 0) continue;               // khối one-hot rất thưa -> bỏ qua cho nhanh
+    const Wi = W[i];
+    for (let j = 0; j < dOut; j++) out[j] += ai * Wi[j];
+  }
+  return { d: dOut, v: out };
+}
+
+/** Chạy xuôi toàn mạng, trả về giá trị thang z (head tuyến tính). */
+function cnnForward(model, xScaled) {
+  let a = { c: 1, l: xScaled.length, v: Float64Array.from(xScaled) };
+  for (const layer of model.layers) {
+    switch (layer.type) {
+      case 'conv1d': a = cnnConv1d(a, layer); break;
+      case 'relu': a = cnnRelu(a); break;
+      case 'maxpool1d': a = cnnMaxPool1d(a, layer.p); break;
+      case 'flatten': a = { d: a.c * a.l, v: a.v }; break;
+      case 'dense': a = cnnDense(a, layer); break;
+      case 'dropout': break;
+      default: throw new Error('Tầng lạ: ' + layer.type);
+    }
+  }
+  return a.v[0];
+}
+
+/** Dựng chuỗi dài 19 đúng thứ tự notebook: 4 số (z-score) + one-hot + one-hot. */
+function buildCnnInput(province, houseType, area, bedrooms, bathrooms, floors) {
+  const M = CNN_MODEL;
+  const nums = [area, bedrooms, bathrooms, floors]
+    .map((v, i) => (v - M.scaler.mean_[i]) / M.scaler.scale_[i]);
+  const provOH = M.provinces.map(p => (p === province ? 1 : 0));
+  const typeOH = M.house_types.map(t => (t === houseType ? 1 : 0));
+  return [...nums, ...provOH, ...typeOH];
+}
+
+function predictCnn(province, houseType, area, bedrooms, bathrooms, floors) {
+  const z = cnnForward(CNN_MODEL,
+    buildCnnInput(province, houseType, area, bedrooms, bathrooms, floors));
+  const tt = CNN_MODEL.target_transform;
+  return Math.max(0.1, Math.expm1(z * tt.std + tt.mean));
+}
+
 // ---- Bộ chọn engine ----
-let ENGINE = 'deep';
+let ENGINE = 'cnn';
 
 function setEngine(name) {
+  // Nếu model_cnn.json chưa tải xong (hoặc lỗi) thì lùi về Deep MLP nhúng sẵn.
+  if (name === 'cnn' && !CNN_MODEL) name = 'deep';
   ENGINE = name;
   document.querySelectorAll('.engine-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.engine === name));
   const hints = {
+    cnn: 'Mạng tích chập 1D 5 tầng (Conv16 → Conv16 → Pool → Conv32 → Dense16 → 1 tuyến tính). '
+       + '19 đặc trưng được coi như một chuỗi; head TUYẾN TÍNH thay cho Sigmoid vì đây là bài hồi quy. '
+       + 'Trọng số tải từ model_cnn.json trên GitHub — suy luận 100% trong trình duyệt.',
     deep: 'Mạng nơ-ron sâu 5 tầng (19 → 128 → 64 → 32 → 16 → 1) học trên thang log1p(giá) với one-hot tỉnh/loại hình — trọng số nhúng thẳng vào trang.',
     gb: 'Gradient Boosting 80 cây của Assignment 01 — mô hình Học máy truyền thống dùng làm mốc đối sánh.',
-    both: 'Chạy song song cả hai mô hình trên cùng một bất động sản và hiển thị chênh lệch định giá.',
+    both: 'Chạy song song cả ba mô hình trên cùng một bất động sản và hiển thị chênh lệch định giá.',
   };
   document.getElementById('engineHint').textContent = hints[name];
 }
@@ -790,8 +908,11 @@ function predict(province, houseType, area, bedrooms, bathrooms, floors) {
   if (!MODEL) throw new Error('Model not loaded');
   const gb = predictGBFor(province, houseType, area, bedrooms, bathrooms, floors);
   const deep = DEEP_MODEL ? predictDeep(province, houseType, area, bedrooms, bathrooms, floors) : null;
-  const price = (ENGINE === 'gb' || deep === null) ? gb : deep;
-  return { price, gb, deep };
+  const cnn = CNN_MODEL ? predictCnn(province, houseType, area, bedrooms, bathrooms, floors) : null;
+  const price = ENGINE === 'gb' ? gb
+              : ENGINE === 'deep' ? (deep ?? gb)
+              : (cnn ?? deep ?? gb);
+  return { price, gb, deep, cnn };
 }
 
 // ============================================================
@@ -903,32 +1024,44 @@ function localFallback(prov, type, area) {
   return Math.max(0.3, area * 0.05 * (pm[prov] || 2) * (tm[type] || 1));
 }
 
-/** Khối đối sánh Deep MLP-5 vs Gradient Boosting. */
+/** Khối đối sánh CNN-5 vs Deep MLP-5 vs Gradient Boosting. */
 function renderComparison(r) {
   const sec = document.getElementById('compareSection');
   if (!sec) return;
-  if (!r || r.deep === null) { sec.style.display = 'none'; return; }
+  if (!r || (r.deep === null && r.cnn === null)) { sec.style.display = 'none'; return; }
   sec.style.display = 'block';
 
-  const max = Math.max(r.deep, r.gb) * 1.08;
-  document.getElementById('cmpDeepPct').textContent = r.deep.toFixed(2) + ' tỷ';
-  document.getElementById('cmpGbPct').textContent   = r.gb.toFixed(2) + ' tỷ';
-  setTimeout(() => {
-    document.getElementById('cmpDeepFill').style.width = (100 * r.deep / max).toFixed(1) + '%';
-    document.getElementById('cmpGbFill').style.width   = (100 * r.gb / max).toFixed(1) + '%';
-  }, 60);
+  const vals = [r.cnn, r.deep, r.gb].filter(v => v !== null && v !== undefined);
+  const max = Math.max(...vals) * 1.08;
+  const setRow = (pctId, fillId, value) => {
+    const el = document.getElementById(pctId);
+    if (el) el.textContent = value === null || value === undefined ? '–' : value.toFixed(2) + ' tỷ';
+    setTimeout(() => {
+      const f = document.getElementById(fillId);
+      if (f) f.style.width = (value ? 100 * value / max : 0).toFixed(1) + '%';
+    }, 60);
+  };
+  setRow('cmpCnnPct', 'cmpCnnFill', r.cnn);
+  setRow('cmpDeepPct', 'cmpDeepFill', r.deep);
+  setRow('cmpGbPct', 'cmpGbFill', r.gb);
 
-  const gap = Math.abs(r.deep - r.gb);
-  const relGap = 200 * gap / (r.deep + r.gb);
-  const dm = DEEP_MODEL.metrics;
-  const gm = (DEEP_MODEL.baseline_metrics && DEEP_MODEL.baseline_metrics['Gradient Boosting']) || null;
+  const gap = Math.max(...vals) - Math.min(...vals);
+  const relGap = 200 * gap / (Math.max(...vals) + Math.min(...vals));
   let msg = relGap < 10
-    ? `Hai mô hình <b>đồng thuận</b> — lệch ${gap.toFixed(2)} tỷ (${relGap.toFixed(1)}%). `
-    : `Hai mô hình <b>lệch nhau ${gap.toFixed(2)} tỷ</b> (${relGap.toFixed(1)}%) — cấu hình này nằm ở vùng thưa dữ liệu. `;
-  msg += `Trên tập kiểm thử, Deep MLP-5 đạt R²(log) = ${dm.r2_log.toFixed(3)}, MAE = ${dm.mae_price.toFixed(2)} tỷ, ` +
-         `sai số tương đối trung vị ${dm.median_ape.toFixed(1)}%`;
-  if (gm) msg += `; Gradient Boosting đạt R²(log) = ${gm['R² (log)'].toFixed(3)}, MAE = ${gm['MAE (tỉ)'].toFixed(2)} tỷ`;
-  msg += '.';
+    ? `Các mô hình <b>đồng thuận</b> — chênh lệch ${gap.toFixed(2)} tỷ (${relGap.toFixed(1)}%). `
+    : `Các mô hình <b>lệch nhau ${gap.toFixed(2)} tỷ</b> (${relGap.toFixed(1)}%) — cấu hình này nằm ở vùng thưa dữ liệu. `;
+
+  if (CNN_MODEL) {
+    const c = CNN_MODEL.comparison || {};
+    const fmt = (k, label) => (c[k]
+      ? `${label} R²(log) ${c[k].r2_log.toFixed(3)} · MAE ${c[k].mae.toFixed(2)} tỷ` : null);
+    const parts = [
+      fmt('CNN-5 (NumPy)', 'CNN-5'),
+      fmt('MLP-5 (A03, PyTorch)', 'MLP-5'),
+      fmt('Gradient Boosting', 'Gradient Boosting'),
+    ].filter(Boolean);
+    if (parts.length) msg += `Trên tập kiểm thử: ${parts.join(' · ')}.`;
+  }
   document.getElementById('cmpVerdict').innerHTML = msg;
 }
 
@@ -937,10 +1070,11 @@ function showResult(price, area, beds, baths, floors, r) {
   document.getElementById('resultPlaceholder').style.display = 'none';
   document.getElementById('resultActual').style.display = 'block';
 
-  // Khoảng tin cậy lấy theo sai số tương đối trung vị đo được trên tập test,
-  // thay vì con số ±15% cố định như trước.
-  const band = (DEEP_MODEL && ENGINE !== 'gb')
-    ? Math.max(0.05, DEEP_MODEL.metrics.median_ape / 100) : 0.15;
+  // Khoảng tin cậy lấy theo sai số tương đối đo được trên tập test của chính
+  // engine đang dùng, thay vì con số ±15% cố định.
+  const band = ENGINE === 'gb' ? 0.15
+    : (CNN_MODEL && ENGINE === 'cnn') ? Math.max(0.05, CNN_MODEL.metrics.mape / 100)
+    : (DEEP_MODEL ? Math.max(0.05, DEEP_MODEL.metrics.median_ape / 100) : 0.15);
   const low  = price * (1 - band);
   const high = price * (1 + band);
 
@@ -980,9 +1114,33 @@ function animateValue(el, from, to, duration) {
 // ============================================================
 // LOAD MODEL
 // ============================================================
-function loadModel() {
+async function loadModel() {
+  // Tải model_cnn.json (Assignment 04). File này commit thẳng lên GitHub và
+  // Vercel phục vụ như tệp tĩnh — không hàm serverless nào chạy, mọi tính toán
+  // diễn ra trên trình duyệt. Fetch lỗi thì trang vẫn dùng được với MLP/GB nhúng sẵn.
+  try {
+    const res = await fetch('model_cnn.json', { cache: 'no-cache' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    CNN_MODEL = await res.json();
+    console.log('✅ CNN đã tải:', CNN_MODEL.architecture_text);
+  } catch (err) {
+    console.warn('⚠ Không tải được model_cnn.json — lùi về Deep MLP nhúng sẵn.', err);
+    CNN_MODEL = null;
+    const sw = document.getElementById('engineSwitch');
+    const btn = sw && sw.querySelector('[data-engine="cnn"]');
+    if (btn) { btn.disabled = true; btn.style.opacity = 0.45; }
+  }
+
   const card = document.getElementById('modelInfoCard');
-  if (card && DEEP_MODEL) {
+  if (card && CNN_MODEL) {
+    const m = CNN_MODEL.metrics;
+    card.style.display = 'block';
+    document.getElementById('mi-r2').textContent    = m.r2_log.toFixed(4);
+    document.getElementById('mi-mae').textContent   = m.mae.toFixed(2) + ' tỷ';
+    document.getElementById('mi-name').textContent  = CNN_MODEL.model_name;
+    document.getElementById('mi-trees').textContent = CNN_MODEL.n_params.toLocaleString('vi-VN') + ' tham số';
+    document.getElementById('mi-fill').style.width  = (m.r2_log * 100).toFixed(1) + '%';
+  } else if (card && DEEP_MODEL) {
     const m = DEEP_MODEL.metrics;
     card.style.display = 'block';
     document.getElementById('mi-r2').textContent    = m.r2_log.toFixed(4);
@@ -999,8 +1157,29 @@ function loadModel() {
     document.getElementById('mi-fill').style.width  = (MODEL.metrics.r2 * 100) + '%';
   }
 
+  // Sơ đồ kiến trúc: CNN dựng từ danh sách tầng, MLP dựng từ mảng `architecture`.
   const flow = document.getElementById('archFlow');
-  if (flow && DEEP_MODEL) {
+  if (flow && CNN_MODEL) {
+    const nodes = [{ big: CNN_MODEL.input_shape[1], small: 'đặc trưng · L=19', io: true }];
+    for (const L of CNN_MODEL.layers) {
+      if (L.type === 'conv1d') nodes.push({ big: L.c_out, small: `Conv K=${L.k} · ReLU` });
+      else if (L.type === 'maxpool1d') nodes.push({ big: '↓' + L.p, small: 'MaxPool' });
+      else if (L.type === 'dense') nodes.push({
+        big: L.d_out,
+        small: L.d_out === 1 ? 'Dense · Linear' : 'Dense · ReLU',
+        io: L.d_out === 1,
+      });
+    }
+    flow.innerHTML = nodes.map(n =>
+      `<div class="arch-node${n.io ? ' io' : ''}">${n.big}<small>${n.small}</small></div>`
+    ).join('<span class="arch-arrow">→</span>');
+    const t = CNN_MODEL.training;
+    document.getElementById('archNote').textContent =
+      `${CNN_MODEL.n_params.toLocaleString('vi-VN')} tham số · ${CNN_MODEL.n_trainable_layers} tầng ` +
+      `huấn luyện được · ${t.epochs_run} epoch bằng Adam (lr=${t.lr}, dropout=${t.dropout}) ` +
+      `trong ${t.numpy_seconds}s. Nơ-ron ra dùng kích hoạt TUYẾN TÍNH (không Sigmoid) vì đây là ` +
+      `bài hồi quy; nhãn được biến đổi log1p rồi chuẩn hoá z-score nên mạng tối ưu sai số tương đối.`;
+  } else if (flow && DEEP_MODEL) {
     const dims = DEEP_MODEL.architecture;
     flow.innerHTML = dims.map((d, i) => {
       const io = (i === 0 || i === dims.length - 1) ? ' io' : '';
@@ -1010,37 +1189,36 @@ function loadModel() {
     const t = DEEP_MODEL.training;
     document.getElementById('archNote').textContent =
       `${DEEP_MODEL.n_params.toLocaleString('vi-VN')} tham số · ${t.epochs_run} epoch bằng Adam ` +
-      `(lr=${t.lr}, dropout=${t.dropout}) trong ${t.numpy_seconds}s. ` +
-      `Nhãn được biến đổi log1p rồi chuẩn hoá z-score, nên mạng tối ưu sai số tương đối thay vì sai số tuyệt đối.`;
+      `(lr=${t.lr}, dropout=${t.dropout}) trong ${t.numpy_seconds}s.`;
   }
 
   // Bảng đối sánh: đọc thẳng từ metrics đã xuất kèm trọng số, không hard-code số liệu
   const tbody = document.getElementById('cmpTableBody');
-  if (tbody && DEEP_MODEL) {
-    const rows = Object.entries(DEEP_MODEL.baseline_metrics).map(([name, m]) => ({
-      name, r2: m['R² (log)'], mae: m['MAE (tỉ)'], deep: false,
+  if (tbody && CNN_MODEL && CNN_MODEL.comparison) {
+    const rows = Object.entries(CNN_MODEL.comparison).map(([name, m]) => ({
+      name, r2: m.r2_log, mae: m.mae,
+      cnn: name.startsWith('CNN'), deep: name.startsWith('MLP'),
     }));
-    rows.push({ name: 'Deep MLP-5 (NumPy)', r2: DEEP_MODEL.metrics.r2_log,
-                mae: DEEP_MODEL.metrics.mae_price, deep: true });
     rows.sort((a, b) => b.r2 - a.r2);
     const best = rows[0].name;
     tbody.innerHTML = rows.map(r => {
       const star = r.name === best ? '★ ' : '';
       const cls = r.name === best ? ' td-best' : '';
-      const bg = r.deep ? ' style="background:rgba(16,185,129,.06)"' : '';
+      const bg = r.cnn ? ' style="background:rgba(99,102,241,.08)"'
+               : r.deep ? ' style="background:rgba(16,185,129,.06)"' : '';
+      const icon = r.cnn ? '🧩 ' : r.deep ? '🧠 ' : '';
       return `<tr${bg}>
-        <td class="td-name${cls}">${star}${r.deep ? '🧠 ' : ''}${r.name}</td>
+        <td class="td-name${cls}">${star}${icon}${r.name}</td>
         <td class="td-r2${cls}">${r.r2.toFixed(4)}</td>
         <td class="${cls.trim()}">${r.mae.toFixed(2)}</td>
-        <td class="td-bar-cell"><div class="td-bar"><div class="td-fill" style="width:${(r.r2 * 100).toFixed(0)}%"></div></div></td>
+        <td class="td-bar-cell"><div class="td-bar"><div class="td-fill" style="width:${(Math.max(0, r.r2) * 100).toFixed(0)}%"></div></div></td>
       </tr>`;
     }).join('');
   }
 
-  if (typeof setEngine === 'function') setEngine('deep');
+  if (typeof setEngine === 'function') setEngine(CNN_MODEL ? 'cnn' : 'deep');
   const overlay = document.getElementById('loadingOverlay');
   if (overlay) overlay.classList.remove('show');
-  console.log('✅ Models ready:', DEEP_MODEL ? DEEP_MODEL.architecture.join('→') : MODEL.model_name);
 }
 
 // ============================================================
